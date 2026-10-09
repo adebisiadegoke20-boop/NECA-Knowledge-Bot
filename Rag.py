@@ -16,7 +16,13 @@ supabase = create_client(
     SUPABASE_SERVICE_KEY
 )
 
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+embedding_model = embedding_model = None
+def get_embedding_model():
+    global embedding_model
+    if embedding_model is None:
+        print("Loading embedding model...")
+        embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return embedding_model
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 print("System Initialized")
@@ -188,7 +194,7 @@ def ingest_neca_document():
         for i, chunk in enumerate(chunks):
 
             embedding = (
-                embedding_model
+                get_embedding_model
                 .encode(chunk)
                 .tolist()
             )
@@ -225,7 +231,7 @@ def ingest_neca_document():
 def rag_search(question, top_k=5):
 
     query_embedding = (
-        embedding_model
+        get_embedding_model
         .encode(question)
         .tolist()
     )
@@ -585,18 +591,19 @@ def full_rag(question):
 #ingest_neca_document()
 
 
+
 # RAG Tests
-print()
-print("=" * 50)
-print("NECA RAG TESTS")
-print("=" * 50)
+if __name__ == "__main__":
+    print()
+    print("=" * 50)
+    print("NECA RAG TESTS")
+    print("=" * 50)
 
-
-full_rag("What is NECA and when was it established?")
-full_rag("What are the benefits of NECA membership?")
-full_rag("What are the requirements for becoming a NECA member?")
-full_rag("What training and learning development services does NECA provide?")
-full_rag("Where is the NECA Abuja office located?")
-full_rag("Where is the NECA Lagos office located?")
-full_rag("What courses are offered by the NECA ICT Academy?")
-full_rag("What hospital in Abuja provides free antenatal care?")
+    full_rag("What is NECA and when was it established?")
+    full_rag("What are the benefits of NECA membership?")
+    full_rag("What are the requirements for becoming a NECA member?")
+    full_rag("What training and learning development services does NECA provide?")
+    full_rag("Where is the NECA Abuja office located?")
+    full_rag("Where is the NECA Lagos office located?")
+    full_rag("What courses are offered by the NECA ICT Academy?")
+    full_rag("What hospital in Abuja provides free antenatal care?")
