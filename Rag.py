@@ -1,609 +1,665 @@
+
 from supabase import create_client
 from sentence_transformers import SentenceTransformer
-from groq import Groq
-import os
+from groq import Groq, RateLimitError
 from dotenv import load_dotenv
+import os
+import re
+import time
 
 load_dotenv()
 
-# Connect to Supabase
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-supabase = create_client(
-    SUPABASE_URL,
-    SUPABASE_SERVICE_KEY
-)
+if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+    raise ValueError("Check SUPABASE_URL and SUPABASE_SERVICE_KEY in .env")
 
-embedding_model = embedding_model = None
+if not GROQ_API_KEY:
+    raise ValueError("Check GROQ_API_KEY in .env")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+groq_client = Groq(api_key=GROQ_API_KEY)
+embedding_model = None
+
+
+FEE_TERMS = [
+    "membership fee", "membership fees", "membership cost",
+    "cost of membership", "how much", "entrance fee",
+    "annual subscription", "subscription fee", "erpf",
+    "enterprise resource planning fund", "turnover band", "fee schedule"
+]
+
+REQUIREMENT_TERMS = [
+    "membership requirements", "requirements for becoming",
+    "become a neca member", "becoming a neca member",
+    "minimum workforce", "minimum workers", "minimum employees",
+    "eligibility", "eligible", "qualify", "membership application",
+    "apply for membership", "join neca"
+]
+
+BENEFIT_TERMS = [
+    "benefits of membership", "benefits of neca membership",
+    "benefits of being a member", "advantages of membership", "why join neca"
+]
+
+CONTACT_TERMS = [
+    "abuja office", "abuja address", "abuja branch", "lagos office",
+    "lagos address", "lagos branch", "head office", "headquarters",
+    "contact neca", "contact details", "where is neca located",
+    "office address", "phone number", "email address"
+]
+
+ACADEMY_TERMS = [
+    "ict academy", "neca ict", "ict academy courses",
+    "academy courses", "courses at the academy"
+]
+
+TRAINING_TERMS = [
+    "training courses", "training and learning", "learning and development",
+    "vocational training", "professional training", "skills training",
+    "courses offered by neca", "training programmes", "training programs"
+]
+
+HISTORY_TERMS = [
+    "what is neca", "meaning of neca", "full meaning of neca",
+    "when was neca established", "when was neca formed",
+    "history of neca", "about neca", "neca founded"
+]
+
+TALENT_TERMS = [
+    "talent network", "neca talent network", "talent management", "recruitment"
+]
+
+SOURCE_GROUPS = [
+    (FEE_TERMS, ["membership-fees"]),
+    (REQUIREMENT_TERMS, ["membership-requirements"]),
+    (BENEFIT_TERMS, ["benefits-of-membership"]),
+    (CONTACT_TERMS, ["contacts"]),
+    (ACADEMY_TERMS, ["necaictacademy.org/courses"]),
+    (TRAINING_TERMS, ["learning-and-development-department"]),
+    (HISTORY_TERMS, ["who-we-are", "faq"]),
+    (TALENT_TERMS, ["neca-talent-network"])
+]
+
+
 def get_embedding_model():
     global embedding_model
+
     if embedding_model is None:
         print("Loading embedding model...")
         embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
     return embedding_model
-groq_client = Groq(api_key=GROQ_API_KEY)
+
 
 print("System Initialized")
 print("Connected to Supabase")
-print("Embedding Model Loaded")
+print("Embedding model will load when needed")
 print("Groq Client Ready")
 
 
-# Document Processing
 def chunk_text(text, chunk_size=500, overlap=50):
+    if chunk_size <= overlap:
+        raise ValueError("chunk_size must be greater than overlap")
 
+    text = (text or "").strip()
     chunks = []
     start = 0
 
     while start < len(text):
-
-        end = min(
-            start + chunk_size,
-            len(text)
-        )
+        end = min(start + chunk_size, len(text))
 
         if end < len(text):
+            split_at = text.rfind(" ", start + chunk_size // 2, end)
 
-            last_period = text.rfind(
-                ".",
-                start,
-                end
-            )
-
-            if last_period > start + chunk_size // 2:
-                end = last_period + 1
+            if split_at > start:
+                end = split_at
 
         chunk = text[start:end].strip()
 
         if len(chunk) > 20:
             chunks.append(chunk)
 
-        new_start = end - overlap
+        if end >= len(text):
+            break
 
-        if new_start <= start:
-            new_start = end
-
-        start = new_start
+        start = max(end - overlap, start + 1)
 
     return chunks
 
 
-# Load NECA scraped data
 def load_neca_data():
-
-    print()
-    print("Loading NECA scraped data...")
-    print("-" * 40)
-
-    with open(
-        "neca_data.txt",
-        "r",
-        encoding="utf-8"
-    ) as file:
-
-        text = file.read()
-
-    print(
-        "Loaded",
-        len(text),
-        "characters"
-    )
-
-    return text
+    with open("neca_data.txt", "r", encoding="utf-8") as file:
+        return file.read()
 
 
-# Separate scraped pages
 def parse_pages(text):
-
     pages = []
-    sections = text.split("=" * 80)
 
-    current_organisation = ""
-    current_page = ""
-
-    for section in sections:
+    for section in text.split("=" * 80):
         lines = section.strip().splitlines()
 
         if not lines:
             continue
 
+        organisation = "NECA"
+        page_url = ""
         content_lines = []
 
         for line in lines:
-            if line.startswith("ORGANISATION:"):
+            line = line.strip()
 
-                current_organisation = (
-                    line.replace(
-                        "ORGANISATION:",
-                        ""
-                    ).strip()
-                )
+            if line.startswith("ORGANISATION:"):
+                organisation = line.split(":", 1)[1].strip()
 
             elif line.startswith("PAGE:"):
+                page_url = line.split(":", 1)[1].strip()
 
-                current_page = (
-                    line.replace(
-                        "PAGE:",
-                        ""
-                    ).strip()
-                )
-
-            elif line.strip():
-
-                content_lines.append(line.strip())
+            elif line:
+                content_lines.append(line)
 
         content = "\n".join(content_lines).strip()
 
-        if content and current_page:
-
+        if content and page_url:
             pages.append({
-                "organisation": current_organisation,
-                "page": current_page,
+                "organisation": organisation,
+                "page": page_url,
                 "content": content
             })
 
     return pages
 
 
-# Ingest NECA data
+# Run manually only when adding new scraped pages.
+# Running this again inserts duplicate chunks.
 def ingest_neca_document():
-
-    text = load_neca_data()
-
-    print()
-    print("Identifying scraped pages...")
-    print("-" * 40)
-
-    pages = parse_pages(text)
-
-    print(
-        "Found",
-        len(pages),
-        "scraped pages"
-    )
-
+    pages = parse_pages(load_neca_data())
+    model = get_embedding_model()
     total_chunks = 0
 
+    print("Found", len(pages), "pages")
+
     for page in pages:
+        chunks = chunk_text(page["content"])
+        print("Processing:", page["page"], "| chunks:", len(chunks))
 
-        organisation = page["organisation"]
-        source = page["page"]
-        content = page["content"]
+        for index, chunk in enumerate(chunks, start=1):
+            embedding = model.encode(chunk).tolist()
 
-        print()
-        print(
-            "Processing:",
-            organisation
-        )
-
-        print(
-            "Source:",
-            source
-        )
-
-        chunks = chunk_text(content)
-
-        print(
-            "Created",
-            len(chunks),
-            "chunks"
-        )
-
-        for i, chunk in enumerate(chunks):
-
-            embedding = (
-                get_embedding_model
-                .encode(chunk)
-                .tolist()
-            )
-
-            supabase.table(
-                "neca_documents"
-            ).insert({
-
-                "title": organisation,
-
+            supabase.table("neca_documents").insert({
+                "title": page["organisation"],
                 "content": chunk,
-
-                "source": source,
-
-                "page_number": i + 1,
-
+                "source": page["page"],
+                "page_number": index,
                 "embedding": embedding
-
             }).execute()
 
             total_chunks += 1
 
-    print()
-    print(
-        "Stored",
-        total_chunks,
-        "chunks in Supabase"
-    )
-
+    print("Stored", total_chunks, "chunks")
     return total_chunks
 
 
-# RAG Search
-def rag_search(question, top_k=5):
+def normalize_text(text):
+    text = str(text or "").lower()
+    text = re.sub(r"[^a-z0-9₦./\-\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
-    query_embedding = (
-        get_embedding_model
-        .encode(question)
-        .tolist()
-    )
 
-    # Vector similarity search
-    results = supabase.rpc(
-        "match_neca_documents",
-        {
-            "query_embedding": query_embedding,
-            "match_threshold": 0.30,
-            "match_count": top_k
-        }
-    ).execute()
+def question_has_any(question, phrases):
+    question = normalize_text(question)
 
-    vector_results = results.data or []
+    for phrase in phrases:
+        phrase = normalize_text(phrase)
 
-    # Keyword-based source matching
-    question_lower = question.lower()
+        if phrase and re.search(
+            r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])",
+            question
+        ):
+            return True
 
-    source_keywords = {
+    return False
 
-        "membership requirements": [
-            "membership-requirements"
-        ],
 
-        "becoming a neca member": [
-            "membership-requirements"
-        ],
+def identify_relevant_sources(question):
+    sources = []
 
-        "requirements for becoming": [
-            "membership-requirements"
-        ],
+    for terms, matching_sources in SOURCE_GROUPS:
+        if question_has_any(question, terms):
+            sources.extend(matching_sources)
 
-        "benefits of membership": [
-            "benefits-of-membership"
-        ],
+    return list(dict.fromkeys(sources))
 
-        "membership fees": [
-            "membership-fees"
-        ],
 
-        "abuja office": [
-            "contacts"
-        ],
+def keyword_relevance(doc, question):
+    q = normalize_text(question)
+    content = normalize_text(doc.get("content", ""))
+    source = normalize_text(doc.get("source", ""))
+    score = 0
 
-        "abuja address": [
-            "contacts"
-        ],
+    if question_has_any(q, FEE_TERMS):
+        if "membership-fees" in source:
+            score += 70
 
-        "contact neca": [
-            "contacts"
-        ],
+        if "membership-requirements" in source:
+            score -= 25
 
-        "neca courses": [
-            "necaictacademy.org/courses"
-        ],
+        if "turnover" in q and "turnover" in content:
+            score += 12
 
-        "courses offered": [
-            "necaictacademy.org/courses"
-        ],
+        if "entrance fee" in q and "entrance fee" in content:
+            score += 12
 
-        "courses are offered": [
-            "necaictacademy.org/courses"
-        ],
+        if question_has_any(q, ["annual subscription", "subscription fee"]):
+            if "subscription" in content:
+                score += 12
 
-        "ict academy courses": [
-            "necaictacademy.org/courses"
-        ],
-        
-        "lagos office": [
-            "contacts"
-        ],
-        "lagos address": [
-            "contacts"
-        ],
-        "neca lagos office": [
-            "contacts"
-        ],
-        "head office": [
-            "contacts"
-        ],
+        if question_has_any(q, ["erpf", "enterprise resource planning fund"]):
+            if "erpf" in content or "enterprise resource planning fund" in content:
+                score += 12
 
-        "where is neca located": [
-            "contacts"
-        ],
+    if (
+        question_has_any(q, REQUIREMENT_TERMS)
+        and not question_has_any(q, FEE_TERMS)
+    ):
+        if "membership-requirements" in source:
+            score += 65
+
+        if "membership-fees" in source:
+            score -= 20
+
+        if question_has_any(q, [
+            "minimum workforce", "minimum workers", "minimum employees"
+        ]):
+            if any(term in content for term in [
+                "minimum of 5 workers", "5 employees",
+                "five employees", "5 workers"
+            ]):
+                score += 15
+
+    if question_has_any(q, BENEFIT_TERMS):
+        if "benefits-of-membership" in source:
+            score += 60
+
+    if question_has_any(q, CONTACT_TERMS):
+        if "contacts" in source:
+            score += 60
+
+        if "abuja" in q and "abuja" in content:
+            score += 15
+
+        if "lagos" in q and ("lagos" in content or "ikeja" in content):
+            score += 15
+
+    if question_has_any(q, ACADEMY_TERMS):
+        if "necaictacademy.org/courses" in source:
+            score += 70
+
+        if "learning-and-development-department" in source:
+            score -= 25
+
+    if (
+        question_has_any(q, TRAINING_TERMS)
+        and not question_has_any(q, ACADEMY_TERMS)
+    ):
+        if "learning-and-development-department" in source:
+            score += 60
+
+        if "necaictacademy.org/courses" in source:
+            score -= 20
+
+    if question_has_any(q, HISTORY_TERMS):
+        if "who-we-are" in source or "faq" in source:
+            score += 45
+
+    if question_has_any(q, TALENT_TERMS):
+        if "neca-talent-network" in source:
+            score += 60
+
+    stop_words = {
+        "what", "when", "where", "which", "does", "have", "with",
+        "from", "that", "this", "how", "can", "the", "and", "for",
+        "are", "was", "who", "my", "is", "a", "of", "to", "in",
+        "on", "it", "by"
     }
 
-    matching_sources = []
+    terms = {
+        word for word in q.split()
+        if len(word) > 3 and word not in stop_words
+    }
 
-    for keyword, sources in source_keywords.items():
+    score += min(sum(1 for word in terms if word in content), 10)
 
-        if keyword in question_lower:
+    return score
 
-            matching_sources.extend(
-                sources
+
+def _doc_key(doc):
+    doc_id = doc.get("id")
+
+    if doc_id is not None:
+        return "id:" + str(doc_id)
+
+    source = str(doc.get("source", ""))
+    page_number = str(doc.get("page_number", ""))
+    content = normalize_text(doc.get("content", ""))
+
+    return "text:" + source + "|" + page_number + "|" + content[:250]
+
+
+def rag_search(question, top_k=5):
+    if not question or not question.strip():
+        return []
+
+    print("Searching for relevant NECA information...")
+
+    model = get_embedding_model()
+    query_embedding = model.encode(question).tolist()
+    combined = {}
+
+    try:
+        response = supabase.rpc(
+            "match_neca_documents",
+            {
+                "query_embedding": query_embedding,
+                "match_threshold": 0.30,
+                "match_count": max(top_k * 3, 15)
+            }
+        ).execute()
+
+        for raw_doc in response.data or []:
+            doc = dict(raw_doc)
+            similarity = doc.get("similarity")
+
+            if similarity is None:
+                similarity = doc.get("similarity_score")
+
+            doc["similarity"] = (
+                float(similarity) if similarity is not None else None
             )
 
-   
-    # Retrieve relevant chunks from matching source pages
-    keyword_results = []
+            combined[_doc_key(doc)] = doc
 
-    for source in matching_sources:
-        source_query = (
-            supabase
-            .table("neca_documents")
-            .select(
-                "id,title,content,source,page_number"
-            )
-            .ilike(
-                "source",
-                f"%{source}%"
-            )
-            .limit(20)
-            .execute()
-        )
+    except Exception as exc:
+        print("Vector search failed:", exc)
 
-        if source_query.data:
-            keyword_results.extend(
-                source_query.data
+    for source_name in identify_relevant_sources(question):
+        try:
+            response = (
+                supabase.table("neca_documents")
+                .select("id,title,content,source,page_number")
+                .ilike("source", "%" + source_name + "%")
+                .limit(30)
+                .execute()
             )
 
-    # Prioritize chunks containing the requested location
-    if any(
-        keyword in question_lower
-        for keyword in [
-            "lagos office",
-            "lagos address",
-            "neca lagos",
-            "head office"
-        ]
-    ):
-        keyword_results.sort(
-            key=lambda doc: (
-                "lagos" in doc["content"].lower()
-                or "ikeja" in doc["content"].lower()
-            ),
-            reverse=True
-        )
+            for raw_doc in response.data or []:
+                doc = dict(raw_doc)
+                key = _doc_key(doc)
 
-    # Combine vector and keyword results
-    combined = []
+                if key in combined:
+                    doc["similarity"] = combined[key].get("similarity")
+                else:
+                    doc["similarity"] = None
 
-    seen_ids = set()
+                combined[key] = doc
 
-    for doc in vector_results:
+        except Exception as exc:
+            print("Could not search source", source_name, ":", exc)
 
-        if doc["id"] not in seen_ids:
+    documents = list(combined.values())
 
-            combined.append(doc)
+    for doc in documents:
+        doc["keyword_score"] = keyword_relevance(doc, question)
+        doc["combined_score"] = doc["keyword_score"]
 
-            seen_ids.add(doc["id"])
+        similarity = doc.get("similarity")
 
-    for doc in keyword_results:
+        if similarity is not None:
+            doc["combined_score"] += similarity * 20
 
-        if doc["id"] not in seen_ids:
-
-            doc["similarity"] = 1.0
-
-            combined.append(doc)
-
-            seen_ids.add(doc["id"])
-
-    # Sort by relevance
-    combined = sorted(
-        combined,
-        key=lambda x: x.get(
-            "similarity",
-            0
-        ),
+    documents.sort(
+        key=lambda doc: doc.get("combined_score", 0),
         reverse=True
     )
 
-    return combined[:top_k]
+    targeted_sources = identify_relevant_sources(question)
+
+    if targeted_sources:
+        matching = [
+            doc for doc in documents
+            if any(
+                source_name in normalize_text(doc.get("source", ""))
+                for source_name in targeted_sources
+            )
+        ]
+
+        other_vector_results = [
+            doc for doc in documents
+            if doc not in matching and doc.get("similarity") is not None
+        ]
+
+        documents = matching + other_vector_results
+
+    selected = []
+    seen_chunks = set()
+    per_source_count = {}
+
+    for doc in documents:
+        content_key = normalize_text(doc.get("content", ""))
+
+        if not content_key or content_key in seen_chunks:
+            continue
+
+        source = str(doc.get("source", "Unknown source"))
+        source_count = per_source_count.get(source, 0)
+
+        # Prevent one page from taking up all the available context.
+        if source_count >= 3:
+            continue
+
+        seen_chunks.add(content_key)
+        per_source_count[source] = source_count + 1
+        selected.append(doc)
+
+        if len(selected) >= top_k:
+            break
+
+    print("Found", len(selected), "relevant chunks")
+
+    for doc in selected:
+        similarity = doc.get("similarity")
+
+        if similarity is None:
+            match_info = "keyword/source match"
+        else:
+            match_info = "similarity: " + str(round(similarity, 3))
+
+        print(
+            "-",
+            doc.get("title", "NECA"),
+            "|",
+            doc.get("source", "Unknown source"),
+            "|",
+            match_info,
+            "| keyword score:",
+            doc.get("keyword_score", 0)
+        )
+
+    return selected
 
 
-
-# RAG Generate
 def rag_generate(question, documents):
+    if not documents:
+        return "I don't have enough information in the provided NECA documents."
 
-    context = ""
+    context_parts = []
 
-    for i, doc in enumerate(documents):
-
-        context += (
-            "Organisation: "
-            + doc["title"]
-            + "\n"
+    for doc in documents:
+        context_parts.append(
+            "Organisation: " + str(doc.get("title", "NECA")) + "\n"
+            + "Source: " + str(doc.get("source", "Unknown source")) + "\n"
+            + "Content:\n" + str(doc.get("content", "")) + "\n"
         )
 
-        context += (
-            "Source: "
-            + doc["source"]
-            + "\n"
-        )
+    context = "\n---\n".join(context_parts)
 
-        context += (
-            "Content:\n"
-            + doc["content"]
-            + "\n"
-        )
-
-        if i < len(documents) - 1:
-            context += "\n---\n"
-
-    response = groq_client.chat.completions.create(
-
-        model="openai/gpt-oss-120b",
-
-        messages=[
-
-            {
-                "role": "system",
-
-                "content": """
+    system_prompt = """
 You are a NECA Knowledge Assistant.
 
-Answer questions ONLY using information
-contained in the provided NECA documents.
+Answer using only the supplied document excerpts. Do not use outside knowledge
+or invent dates, prices, addresses, requirements, contact details or course names.
 
-Do not use outside knowledge.
+For membership fees, report only figures and turnover bands actually present
+in the excerpts. If the fee information is incomplete or conflicting, say so.
+Do not fill in missing amounts or imply that a partial table is complete.
 
-Do not make up information.
+Keep NECA Learning and Development programmes separate from NECA ICT Academy
+courses.
 
-If the provided documents do not contain
-enough information to answer the question,
-say exactly:
+If the documents do not contain enough information, say:
+"I don't have enough information in the provided NECA documents."
 
-"I don't have enough information in the
-provided NECA documents."
-
-When answering, identify the relevant
-organisation and source page.
-
-Use this format:
-
-[Source: organisation - page URL]
-
-Keep answers clear and concise.
+Give a clear, direct answer. Include relevant source URLs when available.
+Do not use a source to support a claim unless its excerpt supports that claim.
 """
-            },
 
-            {
-                "role": "user",
+    for attempt in range(3):
+        try:
+            response = groq_client.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": "Document excerpts:\n" + context
+                        + "\nQuestion: " + question
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=800
+            )
 
-                "content":
-                    "Documents:\n"
-                    + context
-                    + "\n\nQuestion: "
-                    + question
-            }
+            answer = response.choices[0].message.content
 
-        ],
+            if answer:
+                return answer.strip()
 
-        temperature=0.2
-    )
+            return "I don't have enough information in the provided NECA documents."
 
-    return response.choices[0].message.content
+        except RateLimitError as exc:
+            if attempt < 2:
+                wait_time = 2 ** (attempt + 1)
+                print("Rate limit reached. Retrying in", wait_time, "seconds.")
+                time.sleep(wait_time)
+            else:
+                print("Groq rate limit error:", exc)
+                return (
+                    "The answer service is temporarily rate-limited. "
+                    "Please wait and try again."
+                )
+
+        except Exception as exc:
+            print("Answer generation failed:", exc)
+            return "I couldn't generate an answer right now. Please try again."
+
+    return "The answer service is temporarily unavailable."
 
 
-# Full RAG
 def full_rag(question):
-
     print()
     print("Question:", question)
     print("-" * 50)
 
-    print(
-        "Searching for relevant NECA information..."
-    )
-
     documents = rag_search(question)
 
     if not documents:
-
-        print("No relevant documents found.")
-
-        return {
-            "answer":
-                "I don't have enough information "
-                "in the provided NECA documents.",
-            "sources": []
-        }
-
-    print(
-        "Found",
-        len(documents),
-        "relevant chunks"
-    )
-
-    for doc in documents:
-
-        print(
-            "-",
-            doc["title"],
-            "|",
-            doc["source"],
-            "| similarity:",
-            round(
-                doc["similarity"],
-                3
-            )
-        )
+        answer = "I don't have enough information in the provided NECA documents."
+        print(answer)
+        return {"answer": answer, "sources": []}
 
     print()
     print("Generating answer...")
 
-    answer = rag_generate(
-        question,
-        documents
-    )
+    answer = rag_generate(question, documents)
 
     print()
     print("Answer:")
     print(answer)
-
     print()
     print("Sources:")
 
     sources = []
+    seen_sources = set()
 
     for doc in documents:
+        source_url = doc.get("source", "Unknown source")
+        chunk_number = doc.get("page_number", "Unknown")
+        key = (source_url, str(chunk_number))
 
-        source = {
-            "organisation": doc["title"],
-            "source": doc["source"],
-            "chunk": doc["page_number"],
-            "similarity": round(
-                doc["similarity"],
-                3
+        if key in seen_sources:
+            continue
+
+        seen_sources.add(key)
+        similarity = doc.get("similarity")
+
+        source_info = {
+            "organisation": doc.get("title", "NECA"),
+            "source": source_url,
+            "chunk": chunk_number,
+            "similarity": (
+                round(similarity, 3) if similarity is not None else None
+            ),
+            "match_type": (
+                "vector match" if similarity is not None
+                else "source/keyword match"
             )
         }
 
-        sources.append(source)
+        sources.append(source_info)
+
+        score_text = (
+            "similarity: " + str(round(similarity, 3))
+            if similarity is not None
+            else "source/keyword match"
+        )
 
         print(
             "-",
-            source["organisation"],
+            source_info["organisation"],
             "|",
-            source["source"],
+            source_url,
             "| chunk",
-            source["chunk"],
-            "| similarity:",
-            source["similarity"]
+            chunk_number,
+            "|",
+            score_text
         )
 
-    return {
-        "answer": answer,
-        "sources": sources
-    }
+    return {"answer": answer, "sources": sources}
 
 
-# Store NECA documents
-#print()
-#print("=" * 50)
-#print("NECA DOCUMENT INGESTION")
-#print("=" * 50)
-#ingest_neca_document()
-
-
-
-# RAG Tests
 if __name__ == "__main__":
     print()
     print("=" * 50)
     print("NECA RAG TESTS")
     print("=" * 50)
 
-    full_rag("What is NECA and when was it established?")
-    full_rag("What are the benefits of NECA membership?")
-    full_rag("What are the requirements for becoming a NECA member?")
-    full_rag("What training and learning development services does NECA provide?")
-    full_rag("Where is the NECA Abuja office located?")
-    full_rag("Where is the NECA Lagos office located?")
-    full_rag("What courses are offered by the NECA ICT Academy?")
-    full_rag("What hospital in Abuja provides free antenatal care?")
+    test_questions = [
+        "What is NECA and when was it established?",
+        "What are the benefits of NECA membership?",
+        "What are the requirements for becoming a NECA member?",
+        "What is the minimum workforce required for membership?",
+        "How much does NECA membership cost?",
+        "What training and learning development services does NECA provide?",
+        "Where is the NECA Abuja office located?",
+        "Where is the NECA Lagos office located?",
+        "What courses are offered by the NECA ICT Academy?",
+        "What hospital in Abuja provides free antenatal care?"
+    ]
+
+    for index, question in enumerate(test_questions):
+        full_rag(question)
+
+        if index < len(test_questions) - 1:
+            time.sleep(3)
