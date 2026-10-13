@@ -312,14 +312,13 @@ Answer using only the supplied document excerpts. Do not use outside knowledge
 or invent dates, prices, addresses, requirements, contact details or course names.
 
 CRITICAL INSTRUCTIONS:
-- Give a direct, professional answer based on the available facts.
-- NEVER use meta-commentary or filler phrases like "The NECA knowledge base notes...", "According to the excerpts...", or "The provided text states...". State the facts directly.
-- If the document contains partial application or contact details, provide those facts directly.
-- Only if the documents contain NO relevant information at all, respond with:
-  "I don't have enough information in the provided NECA documents."
+- Provide direct, professional answers based on the available facts.
+- NEVER use meta-commentary or conversational filler (e.g., "The NECA knowledge base notes...", "According to the excerpts...", "The documents state..."). Present facts directly.
+- If the document contains partial application or registration details (such as URLs or ad procedures), state those facts directly.
+- Only say "I don't have enough information in the provided NECA documents." if there are no relevant facts available in the retrieved context.
 - Keep NECA Learning and Development programmes separate from NECA ICT Academy courses.
-- If the user specifies a location (such as Lagos), report only venues and details relevant to that location.
-- For membership fees, report only figures and turnover bands explicitly present in the excerpts.
+- If the user specifies a location (e.g., Lagos), report only venues and details relevant to that location.
+- For membership fees, report only figures and turnover bands present in the excerpts.
 
 Include relevant source URLs when available. Do not use a source to support a claim unless its excerpt supports that claim.
 """
