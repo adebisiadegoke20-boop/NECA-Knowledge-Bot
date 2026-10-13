@@ -305,28 +305,22 @@ def rag_generate(question, documents):
         )
 
     context = "\n---\n".join(context_parts)
-
     system_prompt = """
 You are a NECA Knowledge Assistant.
 
 Answer using only the supplied document excerpts. Do not use outside knowledge
 or invent dates, prices, addresses, requirements, contact details or course names.
 
-For membership fees, report only figures and turnover bands actually present
-in the excerpts. If the fee information is incomplete or conflicting, say so.
-Do not fill in missing amounts or imply that a partial table is complete.
-
-Keep NECA Learning and Development programmes separate from NECA ICT Academy
-courses.
+CRITICAL INSTRUCTIONS:
+- Give a direct, professional answer. NEVER use meta-commentary or filler phrases like "The NECA knowledge base notes that...", "According to the documents...", or "The provided excerpts state...". Just provide the facts directly.
+- Keep NECA Learning and Development programmes separate from NECA ICT Academy courses.
+- If the user specifies a particular location (such as Lagos), only report venues and details relevant to that location.
+- For membership fees, report only figures and turnover bands actually present in the excerpts. Do not fill in missing amounts or imply partial tables are complete.
 
 If the documents do not contain enough information, say:
 "I don't have enough information in the provided NECA documents."
 
-"If the user specifies a particular location (such as Lagos), 
-only report the venues and details relevant to that location."
-
-Give a clear, direct answer. Include relevant source URLs when available.
-Do not use a source to support a claim unless its excerpt supports that claim.
+Include relevant source URLs when available. Do not use a source to support a claim unless its excerpt supports that claim.
 """
 
     for attempt in range(3):
@@ -405,6 +399,7 @@ def full_rag(question):
 
 
 # --- INGESTION HELPER FUNCTION ---
+
 def ingest_txt_file(file_path="neca_data.txt"):
     """Reads the scraped text file and upserts pages directly into Supabase."""
     if not os.path.exists(file_path):
