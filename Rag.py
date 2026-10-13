@@ -322,6 +322,9 @@ courses.
 If the documents do not contain enough information, say:
 "I don't have enough information in the provided NECA documents."
 
+"If the user specifies a particular location (such as Lagos), 
+only report the venues and details relevant to that location."
+
 Give a clear, direct answer. Include relevant source URLs when available.
 Do not use a source to support a claim unless its excerpt supports that claim.
 """
