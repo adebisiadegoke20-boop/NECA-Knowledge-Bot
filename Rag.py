@@ -79,6 +79,23 @@ SOURCE_GROUPS = [
     (TALENT_TERMS, ["neca-talent-network"])
 ]
 
+VENUE_TERMS = [
+    "venue rental", "venue rentals", "neca house", "auditorium",
+    "bauchi hall", "kano hall", "event centre", "halls", "booking contact"
+]
+
+SOURCE_GROUPS = [
+    (FEE_TERMS, ["membership-fees"]),
+    (REQUIREMENT_TERMS, ["membership-requirements"]),
+    (BENEFIT_TERMS, ["benefits-of-membership"]),
+    (CONTACT_TERMS, ["contacts"]),
+    (ACADEMY_TERMS, ["necaictacademy.org/courses"]),
+    (TRAINING_TERMS, ["learning-and-development-department"]),
+    (HISTORY_TERMS, ["who-we-are", "faq"]),
+    (TALENT_TERMS, ["neca-talent-network"]),
+    (VENUE_TERMS, ["venue-rentals"])
+]
+
 print("System Initialized")
 print("Connected to Supabase")
 print("Groq Client Ready")
@@ -174,6 +191,12 @@ def keyword_relevance(doc, question):
     if question_has_any(q, TALENT_TERMS):
         if "neca-talent-network" in source:
             score += 60
+
+    if question_has_any(q, VENUE_TERMS):
+        if any(term in source for term in ["event-centre", "neca.org.ng/event-centre"]):
+            score += 70
+        if any(term in content for term in ["auditorium", "bauchi hall", "kano hall", "event centre"]):
+            score += 20
 
     stop_words = {
         "what", "when", "where", "which", "does", "have", "with",
