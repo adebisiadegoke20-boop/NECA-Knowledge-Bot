@@ -399,3 +399,68 @@ def full_rag(question):
         sources.append(source_info)
 
     return {"answer": answer, "sources": sources}
+
+# --- INGESTION HELPER FUNCTION ---
+
+def ingest_txt_file(file_path="neca_data.txt"):
+    """Reads the scraped text file and upserts pages directly into Supabase."""
+    if not os.path.exists(file_path):
+        print(f"Error: {file_path} not found. Run your scraper first!")
+        return {"status": "error", "message": f"{file_path} not found."}
+
+    print(f"Reading {file_path} for ingestion...")
+    with open(file_path, "r", encoding="utf-8") as f:
+        full_text = f.read()
+
+    sections = full_text.split("=" * 80)
+    success_count = 0
+    
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+            
+        lines = section.splitlines()
+        org_name = "NECA"
+        page_url = "Unknown Source"
+        content_lines = []
+        
+        for line in lines:
+            if line.startswith("ORGANISATION:"):
+                org_name = line.replace("ORGANISATION:", "").strip()
+            elif line.startswith("PAGE:"):
+                page_url = line.replace("PAGE:", "").strip()
+            elif line.startswith("="):
+                continue
+            else:
+                content_lines.append(line)
+                
+        content_text = "\n".join(content_lines).strip()
+        if not content_text:
+            continue
+
+        doc_data = {
+            "title": f"{org_name} - Page Content",
+            "content": content_text,
+            "source": page_url,
+            "page_number": 1
+        }
+
+        try:
+            # Clear old records for this URL to prevent duplicates
+            supabase.table("neca_documents").delete().eq("source", page_url).execute()
+            
+            # Insert fresh content
+            supabase.table("neca_documents").insert(doc_data).execute()
+            print(f"Successfully ingested: {page_url}")
+            success_count += 1
+        except Exception as e:
+            print(f"Failed to ingest {page_url}: {e}")
+
+    print(f"\nIngestion complete! Successfully added {success_count} pages to Supabase.")
+    return {"status": "success", "ingested_count": success_count}
+
+
+if __name__ == "__main__":
+    # Optional: Run ingestion when executing rag.py directly
+    ingest_txt_file()

@@ -30,12 +30,18 @@ WEBSITES = [
             "https://www.necaictacademy.org/programprocess",
             "https://www.necaictacademy.org/faq"
         ]
+    },
+    {
+        "name": "NECA Event Centre",
+        "base_url": "https://eventcentre.neca.org.ng/",
+        "pages": [
+            "https://eventcentre.neca.org.ng/",
+            "https://eventcentre.neca.org.ng/detailed-pricing"
+        ]
     }
 ]
 
-
 headers = {"User-Agent": "Mozilla/5.0"}
-
 
 def scrape_page(url):
     response = requests.get(url, headers=headers, timeout=20)
@@ -51,17 +57,14 @@ def scrape_page(url):
         "svg",
         "iframe",
         "nav",
-        "footer"
+        "footer",
+        "header",
+        "aside"
     ]):
         element.decompose()
 
-    # Prefer the main page content
-    main_content = soup.find("main")
-
-    if main_content:
-        content = main_content
-    else:
-        content = soup.body
+    # Prefer the main page content, fallback to body
+    content = soup.find("main") or soup.find("article") or soup.body
 
     if not content:
         return ""
@@ -71,22 +74,18 @@ def scrape_page(url):
 
     # Clean whitespace
     lines = []
-
     for line in text.splitlines():
         line = " ".join(line.split())
-
         if line:
             lines.append(line)
 
     # Remove repeated consecutive lines
     cleaned_lines = []
-
     for line in lines:
         if not cleaned_lines or line != cleaned_lines[-1]:
             cleaned_lines.append(line)
 
     return "\n".join(cleaned_lines)
-
 
 def main():
     all_text = []
@@ -97,22 +96,18 @@ def main():
 
         for page in website["pages"]:
             url = urljoin(website["base_url"], page)
-
             print(f"Scraping: {url}")
 
             try:
                 text = scrape_page(url)
 
                 if text:
-                    # Normalize text before checking for duplicates
                     normalized_text = " ".join(text.split()).lower()
 
-                    # Check if this page's content is already present
                     if normalized_text in seen_content:
                         print(f"Duplicate skipped: {url}")
                         continue
 
-                    # Add content to the set of already-seen pages
                     seen_content.add(normalized_text)
 
                     all_text.append("=" * 80)
@@ -123,7 +118,6 @@ def main():
                     all_text.append("")
 
                     print(f"Success: {len(text)} characters extracted")
-
                 else:
                     print("No text found")
 
@@ -135,7 +129,6 @@ def main():
 
     print("\nScraping complete.")
     print("Saved to: neca_data.txt")
-
 
 if __name__ == "__main__":
     main()
