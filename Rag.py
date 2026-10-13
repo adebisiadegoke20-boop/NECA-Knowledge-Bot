@@ -81,7 +81,7 @@ SOURCE_GROUPS = [
 
 VENUE_TERMS = [
     "venue rental", "venue rentals", "neca house", "auditorium",
-    "bauchi hall", "kano hall", "event centre", "halls", "booking contact"
+    "bauchi hall", "kano hall", "event centre", "halls", "booking contact", "pricing", "rates"
 ]
 
 SOURCE_GROUPS = [
@@ -93,8 +93,9 @@ SOURCE_GROUPS = [
     (TRAINING_TERMS, ["learning-and-development-department"]),
     (HISTORY_TERMS, ["who-we-are", "faq"]),
     (TALENT_TERMS, ["neca-talent-network"]),
-    (VENUE_TERMS, ["venue-rentals"])
+    (VENUE_TERMS, ["eventcentre.neca.org.ng/detailed-pricing"])
 ]
+
 
 print("System Initialized")
 print("Connected to Supabase")
