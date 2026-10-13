@@ -20,6 +20,7 @@ if not GROQ_API_KEY:
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
+# Term Lists
 FEE_TERMS = [
     "membership fee", "membership fees", "membership cost",
     "cost of membership", "how much", "entrance fee",
@@ -68,22 +69,13 @@ TALENT_TERMS = [
     "talent network", "neca talent network", "talent management", "recruitment"
 ]
 
-SOURCE_GROUPS = [
-    (FEE_TERMS, ["membership-fees"]),
-    (REQUIREMENT_TERMS, ["membership-requirements"]),
-    (BENEFIT_TERMS, ["benefits-of-membership"]),
-    (CONTACT_TERMS, ["contacts"]),
-    (ACADEMY_TERMS, ["necaictacademy.org/courses"]),
-    (TRAINING_TERMS, ["learning-and-development-department"]),
-    (HISTORY_TERMS, ["who-we-are", "faq"]),
-    (TALENT_TERMS, ["neca-talent-network"])
-]
-
 VENUE_TERMS = [
     "venue rental", "venue rentals", "neca house", "auditorium",
-    "bauchi hall", "kano hall", "event centre", "halls", "booking contact", "pricing", "rates"
+    "bauchi hall", "kano hall", "event centre", "halls", "booking contact",
+    "pricing", "rates", "lagos venue", "abuja room", "enugu room"
 ]
 
+# Combined Source Groups
 SOURCE_GROUPS = [
     (FEE_TERMS, ["membership-fees"]),
     (REQUIREMENT_TERMS, ["membership-requirements"]),
@@ -93,9 +85,8 @@ SOURCE_GROUPS = [
     (TRAINING_TERMS, ["learning-and-development-department"]),
     (HISTORY_TERMS, ["who-we-are", "faq"]),
     (TALENT_TERMS, ["neca-talent-network"]),
-    (VENUE_TERMS, ["eventcentre.neca.org.ng/detailed-pricing"])
+    (VENUE_TERMS, ["eventcentre.neca.org.ng/detailed-pricing", "event-centre"])
 ]
-
 
 print("System Initialized")
 print("Connected to Supabase")
@@ -194,8 +185,8 @@ def keyword_relevance(doc, question):
             score += 60
 
     if question_has_any(q, VENUE_TERMS):
-        if any(term in source for term in ["event-centre", "neca.org.ng/event-centre"]):
-            score += 70
+        if any(term in source for term in ["eventcentre", "event-centre"]):
+            score += 80
         if any(term in content for term in ["auditorium", "bauchi hall", "kano hall", "event centre"]):
             score += 20
 
