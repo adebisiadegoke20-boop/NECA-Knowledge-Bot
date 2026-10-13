@@ -35,8 +35,7 @@ WEBSITES = [
         "name": "NECA Event Centre",
         "base_url": "https://eventcentre.neca.org.ng/",
         "pages": [
-            "https://eventcentre.neca.org.ng/",
-            "https://eventcentre.neca.org.ng/detailed-pricing"
+            "https://eventcentre.neca.org.ng/"
         ]
     }
 ]

@@ -400,8 +400,8 @@ def full_rag(question):
 
     return {"answer": answer, "sources": sources}
 
-# --- INGESTION HELPER FUNCTION ---
 
+# --- INGESTION HELPER FUNCTION ---
 def ingest_txt_file(file_path="neca_data.txt"):
     """Reads the scraped text file and upserts pages directly into Supabase."""
     if not os.path.exists(file_path):
@@ -412,32 +412,39 @@ def ingest_txt_file(file_path="neca_data.txt"):
     with open(file_path, "r", encoding="utf-8") as f:
         full_text = f.read()
 
-    sections = full_text.split("=" * 80)
+    # Split the file by the ORGANISATION marker to cleanly isolate each page block
+    blocks = full_text.split("ORGANISATION:")
     success_count = 0
     
-    for section in sections:
-        section = section.strip()
-        if not section:
+    for block in blocks:
+        block = block.strip()
+        if not block:
             continue
             
-        lines = section.splitlines()
-        org_name = "NECA"
+        lines = block.splitlines()
+        org_name = lines[0].strip() if lines else "NECA"
         page_url = "Unknown Source"
         content_lines = []
         
-        for line in lines:
-            if line.startswith("ORGANISATION:"):
-                org_name = line.replace("ORGANISATION:", "").strip()
-            elif line.startswith("PAGE:"):
-                page_url = line.replace("PAGE:", "").strip()
-            elif line.startswith("="):
+        # Look through the block lines to find the PAGE: header and separate content
+        is_content = False
+        for line in lines[1:]:
+            line_str = line.strip()
+            if line_str.startswith("PAGE:"):
+                page_url = line_str.replace("PAGE:", "").strip()
                 continue
-            else:
+            if "================================================================================" in line_str:
+                is_content = True
+                continue
+            if is_content:
                 content_lines.append(line)
-                
+
         content_text = "\n".join(content_lines).strip()
         if not content_text:
-            continue
+            # Fallback if block structure differs slightly
+            content_text = "\n".join(lines[2:]).strip()
+            if not content_text:
+                continue
 
         doc_data = {
             "title": f"{org_name} - Page Content",
@@ -459,7 +466,6 @@ def ingest_txt_file(file_path="neca_data.txt"):
 
     print(f"\nIngestion complete! Successfully added {success_count} pages to Supabase.")
     return {"status": "success", "ingested_count": success_count}
-
 
 if __name__ == "__main__":
     # Optional: Run ingestion when executing rag.py directly
